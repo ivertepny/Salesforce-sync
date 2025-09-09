@@ -1,0 +1,92 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# Distribution / packaging
+*.egg-info
+.eggs
+*.egg
+build/
+dist/
+
+# Django static/media (буде генеруватись всередині контейнера)
+static/
+staticfiles/
+media/
+
+# Logs
+*.log
+*.out
+*.err
+logs/
+
+# Databases / caches / volumes
+db.sqlite3
+db.sqlite3-journal
+pgdata/
+db-data/
+redis-data/
+rabbitmq-data/
+celery-data/
+mongo-data/
+
+# Coverage / test artifacts
+htmlcov/
+.tox/
+.nox/
+.coverage
+.coverage.*
+.cache
+.pytest_cache/
+nosetests.xml
+coverage.xml
+*.cover
+*.py,cover
+test-results/
+junit.xml
+
+# IDE / Editor configs
+.idea/
+.vscode/
+*.iml
+out/
+.spyderproject
+.spyproject
+.ropeproject
+.history/
+
+# Node / frontend
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+
+# Secrets
+*.pem
+*.key
+*.crt
+*.csr
+*.der
+secrets.json
+.env
+.env.local
+.env.dev
+.env.prod
+
+# Docker itself
+.dockerignore
+docker-compose.override.yml
