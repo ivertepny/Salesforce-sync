@@ -13,7 +13,8 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG')
 
-ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(",") if os.getenv('ALLOWED_HOSTS') else []
+# ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(",") if os.getenv('ALLOWED_HOSTS') else []
+ALLOWED_HOSTS= ['*']
 
 # Application definition
 
@@ -58,6 +59,8 @@ TEMPLATES = [
 ]
 
 WSGI_APPLICATION = 'Salesforce_sync.wsgi.application'
+
+IN_DOCKER = os.environ.get("IN_DOCKER", "False").lower() == "true"
 
 # Database
 DATABASES = {
@@ -110,3 +113,25 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/5.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+CELERY_TASK_TIME_LIMIT = 60 * 15
+CELERY_TASK_SOFT_TIME_LIMIT = 60 * 10
+CELERY_TASK_TRACK_STARTED = True
+CELERY_ACCEPT_CONTENT = ["json"]
+CELERY_TASK_SERIALIZER = "json"
+CELERY_RESULT_SERIALIZER = "json"
+
+CELERY_BEAT_SCHEDULE = {
+    "sync-google-ads-regular": {
+        "task": "ads_sync.tasks.sync_google_ads_pipeline",
+        "schedule": 60 * 15,
+        "options": {"queue": "sync"},
+    },
+    "sync-google-ads-nightly": {
+        "task": "ads_sync.tasks.nightly_full_reconcile",
+        "schedule": 60 * 60 * 24,
+        "options": {"queue": "sync"},
+    },
+}
