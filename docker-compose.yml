@@ -75,7 +75,7 @@ services:
     command: --broker=${CELERY_BROKER_URL} --port=5555
 
   rabbitmq:
-    image: rabbitmq:4.1.4-management-alpine
+    image: rabbitmq:3-management
     container_name: rabbitmq
     ports:
       - "5672:5672"
