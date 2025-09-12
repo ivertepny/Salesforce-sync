@@ -1,27 +1,111 @@
+#networks:
+#  app-network:
+#    name: course-network
+#    driver: bridge
+#    ipam:
+#      config:
+#        - subnet: 172.15.0.0/24
+
 services:
   web:
     build: .
     container_name: web
-    env_file: .env
-    command: sh -c "python manage.py migrate && python manage.py runserver 0.0.0.0:8000"
+    restart: always
+    command: sh -c "sleep 5 &&
+      python manage.py makemigrations --noinput &&
+      python manage.py migrate &&
+      python manage.py runserver 0.0.0.0:8000"
+
+    volumes:
+      - .:/usr/src/
     ports:
       - "8000:8000"
+    #    networks:
+    #      - app-network
     depends_on:
       - db
+      - redis
+    environment:
+      - IN_DOCKER=true
+      - SECRET_KEY=${SECRET_KEY}
+      - POSTGRES_HOST=${POSTGRES_HOST}
+      - POSTGRES_PORT=${POSTGRES_PORT}
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      #      - EMAIL_HOST=${EMAIL_HOST}
+      #      - EMAIL_PORT=${EMAIL_PORT}
+      #      - EMAIL_USE_TLS=${EMAIL_USE_TLS}
+      #      - EMAIL_HOST_USER=${EMAIL_HOST_USER}
+      #      - EMAIL_HOST_PASSWORD=${EMAIL_HOST_PASSWORD}
+      #      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+      #      - CELERY_RESULT_BACKEND=${CELERY_RESULT_BACKEND}
+      - DJANGO_SETTINGS_MODULE=Salesforce_sync.settings
+
+  celery_worker:
+    build: .
+    container_name: celery-worker
+    env_file: .env
+    command: celery -A Salesforce_sync.celery_app worker -l INFO --concurrency=4
+    depends_on:
+      - web
+      - redis
     volumes:
       - .:/app
 
-  db:
-    image: postgres:16-alpine
-    container_name: db
+  celery_beat:
+    build: .
+    container_name: celery-beat
+    env_file: .env
+    command: celery -A Salesforce_sync.celery_app beat -l INFO
+    depends_on:
+      - web
+      - redis
+    volumes:
+      - .:/app
+
+  flower:
+    image: mher/flower:0.9.7  # Use a stable version
+    container_name: flower
+    restart: always
+    ports:
+      - "5555:5555"
     environment:
-      POSTGRES_DB: ${POSTGRES_DB}
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      - CELERY_BROKER_URL=${CELERY_BROKER_URL}
+    command: --broker=${CELERY_BROKER_URL} --port=5555
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+
+  db:
+    image: postgres:17.0-alpine
+    container_name: db
+    restart: on-failure
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
     ports:
       - "5432:5432"
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+    #    networks:
+    #      - app-network
+    environment:
+      - POSTGRES_DB=${POSTGRES_DB}
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+
 
 volumes:
-  pgdata:
+  postgres-data:
+
