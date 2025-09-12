@@ -1,37 +1,44 @@
+# googleads_sync/services/google_ads_client.py
 import os
 from typing import Iterable
 from google.ads.googleads.client import GoogleAdsClient
-from google.ads.googleads.errors import GoogleAdsException
 
-def _env(name: str, default: str | None = None):
+
+def _env(name: str, required: bool = True, default=None):
     val = os.getenv(name, default)
-    if val is None:
+    if required and (val is None or val == ""):
         raise RuntimeError(f"Missing env var: {name}")
     return val
 
-class GoogleAds:
-    """Thin wrapper around the official Google Ads Python client (gRPC)."""
 
+class GoogleAds:
     def __init__(self):
-        developer_token = _env("GOOGLE_ADS_DEVELOPER_TOKEN")
-        client_id = _env("GOOGLE_ADS_CLIENT_ID")
-        client_secret = _env("GOOGLE_ADS_CLIENT_SECRET")
-        refresh_token = _env("GOOGLE_ADS_REFRESH_TOKEN")
-        login_customer_id = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+        """
+        Ініціалізує Google Ads SDK через dict-конфіг.
+        Для версій SDK >= 20:
+          - 'use_proto_plus' обов'язковий
+          - OAuth2 поля (client_id, client_secret, refresh_token) мають бути на верхньому рівні
+        """
+        config_dict = {
+            "developer_token": _env("GOOGLE_ADS_DEVELOPER_TOKEN"),
+            # OAuth2 — ВЕРХНІЙ рівень (не в "oauth2": {...})
+            "client_id": _env("GOOGLE_ADS_CLIENT_ID"),
+            "client_secret": _env("GOOGLE_ADS_CLIENT_SECRET"),
+            "refresh_token": _env("GOOGLE_ADS_REFRESH_TOKEN"),
+            # обов'язковий ключ для нових версій
+            "use_proto_plus": True,
+        }
+
+        login_cid = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")
+        if login_cid:
+            # без дефісів, напр. "1234567890"
+            config_dict["login_customer_id"] = login_cid
+
+        # з яким CID працювати в запитах
         self.customer_id = _env("GOOGLE_ADS_CUSTOMER_ID")
 
-        config_dict = {
-            "developer_token": developer_token,
-            "oauth2": {
-                "client_id": client_id,
-                "client_secret": client_secret,
-                "refresh_token": refresh_token,
-            },
-        }
-        if login_customer_id:
-            config_dict["login_customer_id"] = login_customer_id
-
-        self.client = GoogleAdsClient.load_from_dict(config_dict)
+        # ініціалізація клієнта та сервісів
+        self.client: GoogleAdsClient = GoogleAdsClient.load_from_dict(config_dict)
         self.ga_service = self.client.get_service("GoogleAdsService")
         self.campaign_service = self.client.get_service("CampaignService")
 
@@ -44,12 +51,15 @@ class GoogleAds:
             for row in batch.results:
                 yield row
 
-    def mutate_campaigns(self, operations: list):
-        try:
-            response = self.campaign_service.mutate_campaigns(
-                customer_id=self.customer_id,
-                operations=operations,
-            )
-            return response
-        except GoogleAdsException as ex:
-            raise
+    def pause_campaign(self, resource_name: str):
+        op = self.client.get_type("CampaignOperation")()
+        op.update.resource_name = resource_name
+        status_enum = self.client.get_type("CampaignStatusEnum").CampaignStatus
+        op.update.status = status_enum.PAUSED
+        mask = self.client.get_type("FieldMask")
+        mask.paths.append("status")
+        op.update_mask.CopyFrom(mask)
+        return self.campaign_service.mutate_campaigns(
+            customer_id=self.customer_id,
+            operations=[op],
+        )

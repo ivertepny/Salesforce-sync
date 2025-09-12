@@ -17,7 +17,7 @@ def sync_google_ads_pipeline(self):
         pull_campaign_deltas_task.s(),
         push_campaign_changes_task.s(),
     )
-    return workflow.apply_async().id
+    return workflow.apply().id
 
 @shared_task(bind=True, name="ads_sync.nightly_full_reconcile")
 def nightly_full_reconcile(self):
@@ -25,4 +25,4 @@ def nightly_full_reconcile(self):
         pull_campaign_deltas_task.s(),
         push_campaign_changes_task.s(),
     ])
-    return g.apply_async().id
+    return g.apply().id

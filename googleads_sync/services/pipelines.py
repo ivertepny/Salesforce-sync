@@ -32,11 +32,8 @@ def pull_campaign_deltas() -> int:
           campaign.status,
           campaign.advertising_channel_type,
           campaign.start_date,
-          campaign.end_date,
-          campaign.last_modified_time
+          campaign.end_date
         FROM campaign
-        WHERE campaign.last_modified_time >= '{since.astimezone(timezone.utc).isoformat()}'
-        ORDER BY campaign.last_modified_time DESC
     """
 
     processed = 0

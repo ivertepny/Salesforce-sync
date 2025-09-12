@@ -14,7 +14,7 @@ SECRET_KEY = os.getenv('SECRET_KEY')
 DEBUG = os.getenv('DEBUG')
 
 # ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS').split(",") if os.getenv('ALLOWED_HOSTS') else []
-ALLOWED_HOSTS= ['*']
+ALLOWED_HOSTS = ['*']
 
 # Application definition
 
@@ -114,8 +114,8 @@ STATIC_URL = 'static/'
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL")
-CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND")
+CELERY_BROKER_URL = os.getenv("CELERY_BROKER_URL", "memory://")
+CELERY_RESULT_BACKEND = os.getenv("CELERY_RESULT_BACKEND", "cache+memory://")
 CELERY_TASK_TIME_LIMIT = 60 * 15
 CELERY_TASK_SOFT_TIME_LIMIT = 60 * 10
 CELERY_TASK_TRACK_STARTED = True
@@ -126,6 +126,9 @@ CELERY_BROKER_CONNECTION_RETRY_ON_STARTUP = True
 CELERY_BROKER_CONNECTION_MAX_RETRIES = 100
 CELERY_BROKER_HEARTBEAT = 30
 CELERY_BROKER_CONNECTION_TIMEOUT = 30
+
+CELERY_TASK_ALWAYS_EAGER = True
+CELERY_TASK_EAGER_PROPAGATES = True
 
 CELERY_BEAT_SCHEDULE = {
     "sync-google-ads-regular": {
@@ -139,3 +142,26 @@ CELERY_BEAT_SCHEDULE = {
         "options": {"queue": "sync"},
     },
 }
+
+# Celery / Brokers
+
+RABBITMQ_DEFAULT_USER = os.getenv("RABBITMQ_DEFAULT_USER")
+RABBITMQ_DEFAULT_PASS = os.getenv("RABBITMQ_DEFAULT_PASS")
+
+# Google Ads Auth
+GOOGLE_ADS_DEVELOPER_TOKEN = os.getenv("GOOGLE_ADS_DEVELOPER_TOKEN")
+GOOGLE_ADS_CLIENT_ID = os.getenv("GOOGLE_ADS_CLIENT_ID")
+GOOGLE_ADS_CLIENT_SECRET = os.getenv("GOOGLE_ADS_CLIENT_SECRET")
+
+GOOGLE_ADS_REFRESH_TOKEN = os.getenv("GOOGLE_ADS_REFRESH_TOKEN")
+GOOGLE_ADS_LOGIN_CUSTOMER_ID = os.getenv("GOOGLE_ADS_LOGIN_CUSTOMER_ID")  # Manager account
+GOOGLE_ADS_CUSTOMER_ID = os.getenv("GOOGLE_ADS_CUSTOMER_ID")  # Target account
+
+# Salesforce auth
+SF_USERNAME = os.getenv("SF_USERNAME")
+SF_PASSWORD = os.getenv("SF_PASSWORD")
+SF_SECURITY_TOKEN = os.getenv("SF_SECURITY_TOKEN")
+SF_DOMAIN = os.getenv("SF_DOMAIN", "login")  # Or 'test' for sandbox
+
+# Pub/Sub gRPC endpoint
+SF_PUBSUB_ENDPOINT = os.getenv("SF_PUBSUB_ENDPOINT", "pubsub.salesforce.com:443")
