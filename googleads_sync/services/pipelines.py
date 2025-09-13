@@ -1,3 +1,4 @@
+# googleads_sync/services/pipelines.py
 from datetime import timedelta, timezone
 from django.db import transaction
 from django.utils import timezone as djtz
@@ -58,55 +59,106 @@ def pull_campaign_deltas() -> int:
 
     return processed
 
-def push_campaign_changes() -> int:
+def push_campaign_changes(batch_size: int = 200) -> int:
+    """
+    Обробляє PendingChange(resource='campaign', status='pending') у батчах.
+    - Вибірка із select_for_update(skip_locked=True) лише в межах transaction.atomic()
+    - Спочатку позначаємо записи як 'processing' і відпускаємо транзакцію,
+      щоб зовнішній виклик до Google Ads не тримав блокування.
+    - Після виклику позначаємо 'done' або 'error'.
+    """
     client = GoogleAds()
-    changes = list(
-        PendingChange.objects.select_for_update(skip_locked=True)
-        .filter(resource=RESOURCE, status="pending")
-        .order_by("created_at")[:200]
-    )
+    processed = 0
 
-    if not changes:
-        return 0
+    while True:
+        # 1) Вибрати батч і помітити 'processing' ПІД замком
+        with transaction.atomic():
+            to_process = list(
+                PendingChange.objects.filter(resource=RESOURCE, status="pending")
+                .order_by("created_at")
+                .select_for_update(skip_locked=True)[:batch_size]
+            )
+            if not to_process:
+                break
+            ids = [c.id for c in to_process]
+            PendingChange.objects.filter(id__in=ids).update(status="processing")
 
-    campaign_operation = client.client.get_type("CampaignOperation")
-    ops = []
-    for ch in changes:
-        payload = ch.payload or {}
-        if ch.action == "create":
-            op = campaign_operation()
-            c = op.create
-            c.name = payload.get("name", "New Campaign")
-            AdvertisingChannelTypeEnum = client.client.get_type("AdvertisingChannelTypeEnum")
-            c.advertising_channel_type = payload.get("advertising_channel_type", AdvertisingChannelTypeEnum.SEARCH)
-            ops.append(op)
-        elif ch.action in ("update", "pause", "enable"):
-            op = campaign_operation()
-            c = op.update
-            c.resource_name = payload["resource_name"]
-            field_mask = client.client.get_type("FieldMask")
-            CampaignStatusEnum = client.client.get_type("CampaignStatusEnum")
-            if ch.action == "pause":
-                c.status = CampaignStatusEnum.PAUSED
-                field_mask.paths.append("status")
-            elif ch.action == "enable":
-                c.status = CampaignStatusEnum.ENABLED
-                field_mask.paths.append("status")
-            else:
-                for key, value in payload.get("fields", {}).items():
-                    setattr(c, key, value)
-                    field_mask.paths.append(key)
-            op.update_mask.CopyFrom(field_mask)
-            ops.append(op)
-        elif ch.action == "remove":
-            op = campaign_operation()
-            op.remove = payload["resource_name"]
-            ops.append(op)
+        # 2) Зібрати операції ПОЗА транзакцією
+        campaign_operation = client.client.get_type("CampaignOperation")
+        ops = []
+        id_map = []  # збережемо відповідність для логування/помилок
+        for ch in to_process:
+            payload = ch.payload or {}
+            try:
+                if ch.action == "create":
+                    op = campaign_operation()
+                    c = op.create
+                    c.name = payload.get("name", "New Campaign")
+                    AdvertisingChannelTypeEnum = client.client.get_type("AdvertisingChannelTypeEnum")
+                    c.advertising_channel_type = payload.get(
+                        "advertising_channel_type",
+                        AdvertisingChannelTypeEnum.SEARCH,
+                    )
+                    ops.append(op)
+                    id_map.append(ch.id)
 
-    if not ops:
-        return 0
+                elif ch.action in ("update", "pause", "enable"):
+                    op = campaign_operation()
+                    c = op.update
+                    c.resource_name = payload["resource_name"]
+                    field_mask = client.client.get_type("FieldMask")
+                    CampaignStatusEnum = client.client.get_type("CampaignStatusEnum")
+                    if ch.action == "pause":
+                        c.status = CampaignStatusEnum.PAUSED
+                        field_mask.paths.append("status")
+                    elif ch.action == "enable":
+                        c.status = CampaignStatusEnum.ENABLED
+                        field_mask.paths.append("status")
+                    else:
+                        for key, value in (payload.get("fields") or {}).items():
+                            setattr(c, key, value)
+                            field_mask.paths.append(key)
+                    op.update_mask.CopyFrom(field_mask)
+                    ops.append(op)
+                    id_map.append(ch.id)
 
-    client.mutate_campaigns(ops)
-    ids = [c.id for c in changes]
-    PendingChange.objects.filter(id__in=ids).update(status="done")
-    return len(ops)
+                elif ch.action == "remove":
+                    op = campaign_operation()
+                    op.remove = payload["resource_name"]
+                    ops.append(op)
+                    id_map.append(ch.id)
+
+                else:
+                    # Невідома дія — позначимо error
+                    with transaction.atomic():
+                        PendingChange.objects.filter(id=ch.id).update(
+                            status="error",
+                            error=f"Unsupported action: {ch.action}",
+                        )
+
+            except Exception as e:
+                # Проблема підготовки операції — позначаємо error для конкретного запису
+                with transaction.atomic():
+                    PendingChange.objects.filter(id=ch.id).update(
+                        status="error",
+                        error=str(e)[:1000],
+                    )
+
+        if not ops:
+            # Усі пішли в error або нічого робити
+            continue
+
+        # 3) Виконати мутацію ПОЗА транзакцією
+        try:
+            client.mutate_campaigns(ops)
+            # 4a) Успіх — помітити done
+            with transaction.atomic():
+                PendingChange.objects.filter(id__in=id_map).update(status="done", error="")
+            processed += len(ops)
+        except Exception as e:
+            # 4b) Фейл — помітити error з повідомленням
+            err = str(e)[:1000]
+            with transaction.atomic():
+                PendingChange.objects.filter(id__in=id_map).update(status="error", error=err)
+
+    return processed

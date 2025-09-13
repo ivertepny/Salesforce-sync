@@ -16,9 +16,11 @@ def push_campaign_changes_task(self):
 def sync_google_ads_pipeline(self):
     workflow = chain(
         pull_campaign_deltas_task.s(),
-        push_campaign_changes_task.s(),
+        push_campaign_changes_task.si(),  # immutable: не отримає попередній результат
     )
-    return workflow.apply().id
+    # важливо: запускати асинхронно всередині задачі
+    res = workflow.apply_async()
+    return {"chain_id": res.id}
 
 @shared_task(bind=True, name="ads_sync.nightly_full_reconcile")
 def nightly_full_reconcile(self):
@@ -26,4 +28,7 @@ def nightly_full_reconcile(self):
         pull_campaign_deltas_task.s(),
         push_campaign_changes_task.s(),
     ])
-    return g.apply().id
+    # так само асинхронно
+    res = g.apply_async()
+    return {"group_id": res.id}
+
