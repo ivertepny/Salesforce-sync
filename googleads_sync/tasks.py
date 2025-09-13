@@ -1,3 +1,4 @@
+# googleads_sync/tasks.py
 from celery import shared_task, chain, group
 from .services.pipelines import pull_campaign_deltas, push_campaign_changes
 

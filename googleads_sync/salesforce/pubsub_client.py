@@ -1,3 +1,4 @@
+# googleads_sync/salesforce/pubsub_client.py
 import os
 import grpc
 import json
@@ -11,6 +12,7 @@ from .grpc_stubs import pubsub_api_pb2_grpc as pb2_grpc
 
 PUBSUB_ENDPOINT = os.getenv("SF_PUBSUB_ENDPOINT", "api.pubsub.salesforce.com:7443")
 
+
 def _auth_metadata() -> Tuple[Tuple[str, str], ...]:
     sf = get_sf()
     session_id = sf.session_id
@@ -20,11 +22,13 @@ def _auth_metadata() -> Tuple[Tuple[str, str], ...]:
         res = soql_query("SELECT Id FROM Organization")
         org_id = res["records"][0]["Id"]
         os.environ["SF_ORG_ID"] = org_id
+    # ВАЖЛИВО: ключі нижнім регістром
     return (
         ("accesstoken", session_id),
         ("instanceurl", instance_url),
         ("tenantid", org_id),
     )
+
 
 class PubSubClient:
     def __init__(self):
@@ -46,20 +50,30 @@ class PubSubClient:
         info = self.stub.GetTopic(req, metadata=_auth_metadata())
         return info.schema_id
 
-    def subscribe(self, topic_name: str, replay_preset: str = "LATEST", replay_id: bytes | None = None, batch: int = 1) -> Generator[Dict[str, Any], None, None]:
+    def subscribe(
+        self,
+        topic_name: str,
+        replay_preset: str = "LATEST",
+        replay_id: bytes | None = None,
+        batch: int = 1,
+    ) -> Generator[Dict[str, Any], None, None]:
         sub_req = pb2.SubscriptionRequest(
             topic_name=topic_name,
             num_requested=batch,
             replay_preset=getattr(pb2.ReplayPreset, replay_preset),
             replay_id=replay_id or b"",
         )
+        # Salesforce очікує stream SubscriptionRequest → stream FetchResponse
         sub_stream = self.stub.Subscribe(iter([sub_req]), metadata=_auth_metadata())
         for fetch_resp in sub_stream:
             for event in fetch_resp.events:
                 payload_bytes = event.event.payload
                 schema_id = event.event.schema_id
-                schema = self.get_schema(schema_id)
-                decoded = schemaless_reader(BytesIO(payload_bytes), schema)
+                try:
+                    schema = self.get_schema(schema_id)
+                    decoded = schemaless_reader(BytesIO(payload_bytes), schema)
+                except Exception:
+                    decoded = {"_raw": payload_bytes.hex() if payload_bytes else None, "_schema_id": schema_id}
                 yield {
                     "schema_id": schema_id,
                     "replay_id": event.replay_id,
