@@ -47,6 +47,7 @@ class PendingChange(Timestamped):
     )
     RESOURCES = (
         ("campaign", "Campaign"),
+        ("lead", "Lead"),
     )
 
     resource = models.CharField(max_length=32, choices=RESOURCES)
@@ -140,3 +141,49 @@ class GoogleAdsAdSnapshot(BaseSnapshot):
     class Meta:
         db_table = "ga_ad_snapshot"
         indexes = [models.Index(fields=["external_id", "snapshot_at"])]
+
+
+# --- ADD: відповідності між SF і GA ---
+class ExternalIdMap(Timestamped):
+    KIND_CHOICES = (
+        ("campaign", "Campaign"),
+        ("lead", "Lead"),
+    )
+    kind = models.CharField(max_length=32, choices=KIND_CHOICES)
+    sf_id = models.CharField(max_length=64, blank=True, null=True, db_index=True)
+    ga_resource = models.CharField(max_length=255, blank=True, null=True, db_index=True)
+
+    class Meta:
+        unique_together = (("kind", "sf_id"), ("kind", "ga_resource"))
+        indexes = [
+            models.Index(fields=["kind", "sf_id"]),
+            models.Index(fields=["kind", "ga_resource"]),
+        ]
+
+    def __str__(self):
+        return f"{self.kind}: SF={self.sf_id} <-> GA={self.ga_resource}"
+
+
+# --- ADD: модель Lead для локальних snapshot’ів/стану ---
+class Lead(Timestamped):
+    # мінімальний кістяк; додати поля під кейс замовника !!!!!!!!TODO
+    sf_id = models.CharField(max_length=64, unique=True, null=True, blank=True)
+    ga_click_id = models.CharField(max_length=255, null=True, blank=True)  # gclid/gbraid/wbraid тощо
+    ga_lead_resource = models.CharField(max_length=255, null=True, blank=True)
+
+    status = models.CharField(max_length=64, blank=True, default="")
+    email_sha256 = models.CharField(max_length=128, blank=True, default="")  # якщо будеш вантажити оффлайн-конверсії
+    phone_sha256 = models.CharField(max_length=128, blank=True, default="")
+
+    external_updated_at = models.DateTimeField(blank=True, null=True)
+    last_synced_at = models.DateTimeField(default=timezone.now)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=["sf_id"]),
+            models.Index(fields=["ga_click_id"]),
+            models.Index(fields=["ga_lead_resource"]),
+        ]
+
+    def __str__(self):
+        return self.sf_id or self.ga_lead_resource or "lead"

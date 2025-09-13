@@ -3,7 +3,13 @@
 import grpc
 import warnings
 
-import pubsub_api_pb2 as pubsub__api__pb2
+# import pubsub_api_pb2 as pubsub__api__pb2
+
+# use package-relative import so Django can load the package
+try:
+    from . import pubsub_api_pb2 as pubsub__api__pb2
+except ImportError:  # fallback if executed outside the package
+    import pubsub_api_pb2 as pubsub__api__pb2
 
 GRPC_GENERATED_VERSION = '1.74.0'
 GRPC_VERSION = grpc.__version__

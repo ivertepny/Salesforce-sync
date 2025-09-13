@@ -18,7 +18,7 @@ services:
       python manage.py runserver 0.0.0.0:8000"
 
     volumes:
-      - .:/usr/app/
+      - .:/usr/src/
     ports:
       - "8000:8000"
     #    networks:
@@ -54,7 +54,7 @@ services:
       - web
       - redis
     volumes:
-      - .:/usr/app
+      - .:/usr/src/
 
   celery_beat:
     build: .
@@ -65,7 +65,7 @@ services:
       - web
       - redis
     volumes:
-      - .:/usr/app
+      - .:/usr/src/
 
   flower:
     image: mher/flower:0.9.7  # Use a stable version
